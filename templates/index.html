@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Rover Command</title>
+    <style>
+        body { font-family: sans-serif; margin: 20px; }
+        .grid { display: grid; grid-template-columns: repeat({{ width }}, 40px); gap: 5px; margin-top: 20px; }
+        .cell { width: 40px; height: 40px; border: 1px solid #333; text-align: center; line-height: 40px; font-weight: bold; }
+        .mine { background-color: #ff4d4d; color: white; }
+        .path { background-color: #ffeb3b; }
+        .grass { background-color: #8bc34a; }
+        section { margin-bottom: 30px; padding: 15px; border: 1px solid #ddd; border-radius: 8px; }
+    </style>
+</head>
+<body>
+    <h1>Rover Command</h1>
+
+    <section>
+        <h3>Map Settings</h3>
+        <form id="mapForm">
+            Width: <input type="number" id="w" value="5" style="width: 50px;">
+            Height: <input type="number" id="h" value="5" style="width: 50px;">
+            <button type="button" onclick="updateMap()">Resize & Clear Map</button>
+        </form>
+    </section>
+
+    <section>
+        <h3>Deploy Mine</h3>
+        <form id="mineForm">
+            ID (Optional): <input type="number" id="mID" style="width: 50px;">
+            X: <input type="number" id="mX" style="width: 40px;">
+            Y: <input type="number" id="mY" style="width: 40px;">
+            SN: <input type="text" id="mSN" placeholder="Serial Num">
+            <button type="button" onclick="addMine()">Place Mine</button>
+         </form>
+    </section>
+
+    <section>
+        <h3>Rover Management</h3>
+        <div style="display: flex; gap: 20px;">
+            <form id="roverForm" style="border-right: 1px solid #ccc; padding-right: 20px;">
+                <h4>1. Create Rover</h4>
+                Start X: <input type="number" id="rX" value="0" style="width: 40px;">
+                Start Y: <input type="number" id="rY" value="0" style="width: 40px;">
+                Facing:
+                <select id="rDir">
+                    <option value="North">North</option>
+                    <option value="East">East</option>
+                    <option value="South" selected>South</option>
+                    <option value="West">West</option>
+                </select><br><br>
+                Commands: <input type="text" id="rCmd" placeholder="MMLMR">
+                <button type="button" onclick="addRover()">Create Rover</button>
+            </form>
+
+            <form id="dispatchForm">
+                <h4>2. Dispatch</h4>
+                Rover ID: <input type="number" id="dID" style="width: 50px;">
+                <button type="button" onclick="dispatchRover()" style="background-color: black; color: white;">Dispatch Rover</button>
+            </form>
+        </div>
+    </section>
+
+    <section style="display: flex; gap: 20px;">
+    <div style="flex: 1;">
+        <h3>Active Rovers</h3>
+        <ul id="roverList">
+            {% for rover in all_rovers %}
+                <li style="margin-bottom: 10px; border-bottom: 1px solid #eee; padding-bottom: 5px;">
+                    <strong>ID: {{ rover.id }}</strong><br>
+                    Pos: ({{ rover.x }}, {{ rover.y }}) | Dir: {{ rover.direction }}<br>
+                    Cmds: <code style="color: blue;">{{ rover.commands }}</code><br>
+                    Status: <em>{{ rover.status }}</em><br>
+                    <button onclick="deleteRover({{ rover.id }})" style="color: red; border: 1px solid red; border-radius: 4px; background: white; cursor: pointer; font-size: 10px; padding: 2px 5px; margin-top: 5px;">
+                        Delete Rover
+                    </button>
+                </li>
+            {% else %}
+                <li style="color: gray;">No rovers available</li>
+            {% endfor %}
+        </ul>
+    </div>
+</section>
+
+    <div class="grid">
+        {% for row in grid %}
+            {% for cell in row %}
+                <div class="cell {% if cell == 1 %}mine{% elif cell == '*' %}path{% else %}grass{% endif %}">
+                    {{ cell }}
+                </div>
+            {% endfor %}
+        {% endfor %}
+    </div>
+
+    <script>
+        async function updateMap() {
+            const w = document.getElementById('w').value;
+            const h = document.getElementById('h').value;
+
+            const data = { width: parseInt(w), height: parseInt(h) };
+
+            await fetch('/map', {
+                method: 'PUT',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(data)
+            });
+            location.reload(); // Trigger the refresh to show the new grid
+        }
+
+        async function addMine() {
+            const idVal = document.getElementById('mID').value;
+            const data = {
+                id: idVal ? parseInt(idVal) : null,
+                x: parseInt(document.getElementById('mX').value),
+                y: parseInt(document.getElementById('mY').value),
+                serial_number: document.getElementById('mSN').value
+            };
+            await fetch('/mines', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(data) });
+            location.reload();
+        }
+
+        async function addRover() {
+            const data = {
+                x: parseInt(document.getElementById('rX').value),
+                y: parseInt(document.getElementById('rY').value),
+                direction: document.getElementById('rDir').value,
+                commands: document.getElementById('rCmd').value
+            };
+            const response = await fetch('/rovers', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(data) });
+            const result = await response.json();
+            alert("Rover Created! ID: " + result.id);
+            location.reload();
+        }
+
+        async function dispatchRover() {
+            const id = document.getElementById('dID').value;
+            if (!id) return alert("Please enter a Rover ID");
+
+            const response = await fetch(`/rovers/${id}/dispatch`, { method: 'POST' });
+            const result = await response.json();
+
+            let message = "Mission " + result.status + "!\nFinal Position: " + result.final_position;
+
+            if (result.disarm_pin !== null && result.disarm_pin !== undefined) {
+                message += "\n\nDisarm Pin Found: " + result.disarm_pin;
+            }
+
+            alert(message);
+            location.reload();
+        }
+
+        async function deleteRover(id) {
+            if (!confirm("Delete Rover " + id + "?")) return;
+            await fetch(`/rovers/${id}`, { method: 'DELETE' });
+            location.reload();
+        }
+
+    </script>
+</body>
+</html>
